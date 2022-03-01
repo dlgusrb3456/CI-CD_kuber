@@ -1,0 +1,52 @@
+# -*- mode: ruby -*-  #에디터에 현재 파일이 루비임을 인식하게 하는 호환 코드
+# vi: set ft=ruby :      #ft는 file type의 약자.
+
+Vagrant.configure("2") do |config|  #"2"는 베이그런트에서 루비로 코드를 읽어 들여 실행할 때 작동하는 API 버전, config 는 베이그런트 설정의 시작을 알림
+  N=3 # 워커 노드의 최대 개수
+  Ver = '2.2.9' #설치할 쿠버네티스의 버젼
+
+    #마스터 노드
+    config.vm.define "m-k8s" do |cfg|
+      cfg.vm.box = "ubuntu/focal64"
+      cfg.vm.provider "virtualbox" do |vb|
+        vb.name = "m-k8s(dms)"
+        vb.cpus = 2
+        vb.memory = 2048
+
+        # :id는 생성되는 가상 머신의 ID를 반환하는 특별한 매개변수이다.
+        #그래서 VBoxManage 커맨드가 ID를 요구할 때 이 특별한 매개변수를 사용한다.
+        #--groups를 이용해서 명시된 그룹으로 분리하는 것이다.
+        # 여러개의 vms가 있으면 헷갈릴 수 있으므로 분류한다.
+        #modifyvm은 ID에 해당하는 vm의 설정을 한다.
+
+        vb.customize ["modifyvm", :id, "--groups", "/k8s-SgMST-1.13.1(github_SysNet4Admin)"]
+      end
+      cfg.vm.host_name = "m-k8s"
+      cfg.vm.network "private_network", ip: "192.168.1.10"
+      cfg.vm.network "forwarded_port", guest: 22, host: 60010, auto_correct: true, id: "ssh" #auto_correct:true를 이용해 포트가 중복되면 자동으로 변경되도록 설정
+      cfg.vm.synced_folder "../data", "/vagrant", disabled: true  #호스트(pc또는 노트북)과 게스트(가상머신) 사이에 디렉토리 동기화가 이뤄지지 않게 설정 (disabled true)
+      cfg.vm.provision "shell", path: "config.sh", args: N
+      cfg.vm.provision "shell", path: "install_pkg.sh", args: [ Ver, "Main" ]
+      cfg.vm.provision "shell", path: "master_node.sh"
+    end
+
+    #워커노드
+  (1..N).each do |i|
+    config.vm.define "w#{i}-k8s" do |cfg|
+      cfg.vm.box = "ubuntu/focal64"
+      cfg.vm.provider "virtualbox" do |vb|
+        vb.name = "w#{i}-k8s(dms)"
+        vb.cpus = 1
+        vb.memory = 1024
+        vb.customize ["modifyvm", :id, "--groups", "/k8s-SgMST-1.13.1(github_SysNet4Admin)"]
+      end
+      cfg.vm.host_name = "w#{i}-k8s"
+      cfg.vm.network "private_network", ip: "192.168.1.10#{i}"
+      cfg.vm.network "forwarded_port", guest: 22, host: "6010#{i}", auto_correct: true, id: "ssh"
+      cfg.vm.synced_folder "../data", "/vagrant", disabled: true
+      cfg.vm.provision "shell", path: "config.sh", args: N
+      cfg.vm.provision "shell", path: "install_pkg.sh", args: Ver
+      cfg.vm.provision "shell", path: "work_nodes.sh"
+    end
+  end
+end
